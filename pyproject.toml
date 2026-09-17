@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "seeding-plan-backend"
+version = "0.1.0"
+description = "Fail-closed SEEDING planning backend derived from the V1.1 design RFC"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.115,<0.117",
+  "pydantic>=2.11,<2.12",
+  "uvicorn>=0.34,<0.36",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx>=0.28,<0.29",
+  "pytest>=8.4,<9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
