@@ -35,6 +35,13 @@ def test_api_is_authenticated_async_and_execution_locked(tmp_path) -> None:
         assert health.status_code == 200
         assert health.json()["platform_adapter_mounted"] is False
         assert health.json()["platform_business_write_count"] == 0
+        assert client.get("/ready").json()["ready_for_planning"] is True
+        console = client.get("/console")
+        assert console.status_code == 200
+        assert "SEEDING Control Console" in console.text
+        assert "Send authenticated request" in console.text
+        assert console.headers["cache-control"] == "no-store"
+        assert "frame-ancestors 'none'" in console.headers["content-security-policy"]
 
         unauthenticated = client.get(
             f"/api/seeding/v1/projects/{config.project_id}/preview"
@@ -65,13 +72,30 @@ def test_api_is_authenticated_async_and_execution_locked(tmp_path) -> None:
         assert preview.json()["project"]["project_state"] == "WAITING_CONFIRMATION"
         assert preview.json()["platform_business_write_count"] == 0
 
-        for suffix in ("authorize-test-write", "execute", "release-grants"):
-            locked = client.post(
+        # Test execution now has typed request contracts; malformed empty bodies
+        # are rejected before any business authorization or platform call.
+        for suffix in ("authorize-test-write", "execute"):
+            rejected = client.post(
                 f"/api/seeding/v1/projects/{config.project_id}/{suffix}",
                 headers=HEADERS,
             )
-            assert locked.status_code == 423
-            assert locked.json()["detail"]["code"] == "FORMAL_EXECUTION_LOCKED"
-            assert (
-                locked.json()["detail"]["details"]["platform_business_write_count"] == 0
-            )
+            assert rejected.status_code == 422
+
+        rejected = client.post(
+            f"/api/seeding/v1/projects/{config.project_id}/release-grants",
+            headers=HEADERS,
+        )
+        assert rejected.status_code == 422
+
+
+def test_readiness_is_unavailable_without_authentication_configuration(
+    tmp_path,
+) -> None:
+    app = create_seeding_app(
+        database_path=tmp_path / "seeding.sqlite3",
+        start_worker=False,
+    )
+    with TestClient(app) as client:
+        response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["ready_for_planning"] is False

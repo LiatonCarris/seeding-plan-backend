@@ -23,6 +23,7 @@ class ProjectState(str, Enum):
 class ExecutionState(str, Enum):
     NONE = "NONE"
     TEST_WRITE_AUTHORIZED = "TEST_WRITE_AUTHORIZED"
+    PRODUCTION_CREATE_AUTHORIZED = "PRODUCTION_CREATE_AUTHORIZED"
     WRITE_IN_PROGRESS = "WRITE_IN_PROGRESS"
     PARTIALLY_CREATED_PAUSED = "PARTIALLY_CREATED_PAUSED"
     PAUSE_FAILED_EMERGENCY = "PAUSE_FAILED_EMERGENCY"
@@ -81,10 +82,118 @@ PROJECT_TRANSITIONS: Dict[ProjectState, FrozenSet[ProjectState]] = {
 }
 
 
+EXECUTION_TRANSITIONS: Dict[ExecutionState, FrozenSet[ExecutionState]] = {
+    ExecutionState.NONE: frozenset(
+        {
+            ExecutionState.TEST_WRITE_AUTHORIZED,
+            ExecutionState.PRODUCTION_CREATE_AUTHORIZED,
+        }
+    ),
+    ExecutionState.TEST_WRITE_AUTHORIZED: frozenset(
+        {ExecutionState.WRITE_IN_PROGRESS, ExecutionState.NONE}
+    ),
+    ExecutionState.PRODUCTION_CREATE_AUTHORIZED: frozenset(
+        {ExecutionState.WRITE_IN_PROGRESS, ExecutionState.NONE}
+    ),
+    ExecutionState.WRITE_IN_PROGRESS: frozenset(
+        {
+            ExecutionState.PARTIALLY_CREATED_PAUSED,
+            ExecutionState.PAUSE_FAILED_EMERGENCY,
+            ExecutionState.CREATE_PAUSED,
+            ExecutionState.READBACK_VERIFIED,
+            ExecutionState.READBACK_MISMATCH,
+            ExecutionState.RECONCILE_REQUIRED,
+            ExecutionState.RECOVERY_REQUIRED,
+            ExecutionState.RELOCK_FAILED,
+            ExecutionState.WAITING_RELEASE_AUTHORIZATION,
+        }
+    ),
+    ExecutionState.PARTIALLY_CREATED_PAUSED: frozenset(
+        {ExecutionState.RECONCILE_REQUIRED, ExecutionState.RECOVERY_REQUIRED}
+    ),
+    ExecutionState.PAUSE_FAILED_EMERGENCY: frozenset(
+        {ExecutionState.RECONCILE_REQUIRED, ExecutionState.RECOVERY_REQUIRED}
+    ),
+    ExecutionState.CREATE_PAUSED: frozenset(
+        {
+            ExecutionState.READBACK_VERIFIED,
+            ExecutionState.READBACK_MISMATCH,
+            ExecutionState.RECONCILE_REQUIRED,
+            ExecutionState.RELOCK_FAILED,
+        }
+    ),
+    ExecutionState.READBACK_VERIFIED: frozenset(
+        {
+            ExecutionState.TEST_WRITE_AUTHORIZED,
+            ExecutionState.WAITING_RELEASE_AUTHORIZATION,
+        }
+    ),
+    ExecutionState.READBACK_MISMATCH: frozenset(
+        {ExecutionState.RECONCILE_REQUIRED, ExecutionState.RECOVERY_REQUIRED}
+    ),
+    ExecutionState.RECONCILE_REQUIRED: frozenset(
+        {
+            ExecutionState.READBACK_VERIFIED,
+            ExecutionState.RECOVERY_REQUIRED,
+            ExecutionState.RELOCK_FAILED,
+        }
+    ),
+    ExecutionState.RECOVERY_REQUIRED: frozenset(
+        {
+            ExecutionState.RECONCILE_REQUIRED,
+            ExecutionState.TEST_WRITE_AUTHORIZED,
+            ExecutionState.PRODUCTION_CREATE_AUTHORIZED,
+        }
+    ),
+    ExecutionState.RELOCK_FAILED: frozenset(
+        {ExecutionState.RECOVERY_REQUIRED, ExecutionState.RECONCILE_REQUIRED}
+    ),
+    ExecutionState.WAITING_RELEASE_AUTHORIZATION: frozenset(
+        {ExecutionState.TEST_WRITE_AUTHORIZED}
+    ),
+}
+
+
+DELIVERY_TRANSITIONS: Dict[DeliveryState, FrozenSet[DeliveryState]] = {
+    DeliveryState.NOT_RELEASED: frozenset(
+        {DeliveryState.FEED_LEARNING, DeliveryState.CLOSED}
+    ),
+    DeliveryState.FEED_LEARNING: frozenset(
+        {DeliveryState.SEARCH_ELIGIBLE, DeliveryState.STABLE, DeliveryState.CLOSING}
+    ),
+    DeliveryState.SEARCH_ELIGIBLE: frozenset(
+        {DeliveryState.STABLE, DeliveryState.CLOSING}
+    ),
+    DeliveryState.STABLE: frozenset({DeliveryState.CLOSING}),
+    DeliveryState.CLOSING: frozenset({DeliveryState.CLOSED}),
+    DeliveryState.CLOSED: frozenset(),
+}
+
+
 def validate_project_transition(current: ProjectState, target: ProjectState) -> None:
     if target not in PROJECT_TRANSITIONS[current]:
         raise SeedingError(
             "INVALID_STATE_TRANSITION",
             f"project transition {current.value} -> {target.value} is not allowed",
+            status_code=409,
+        )
+
+
+def validate_execution_transition(
+    current: ExecutionState, target: ExecutionState
+) -> None:
+    if target not in EXECUTION_TRANSITIONS[current]:
+        raise SeedingError(
+            "INVALID_EXECUTION_STATE_TRANSITION",
+            f"execution transition {current.value} -> {target.value} is not allowed",
+            status_code=409,
+        )
+
+
+def validate_delivery_transition(current: DeliveryState, target: DeliveryState) -> None:
+    if target not in DELIVERY_TRANSITIONS[current]:
+        raise SeedingError(
+            "INVALID_DELIVERY_STATE_TRANSITION",
+            f"delivery transition {current.value} -> {target.value} is not allowed",
             status_code=409,
         )

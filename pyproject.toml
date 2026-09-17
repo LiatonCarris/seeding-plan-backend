@@ -4,11 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "seeding-plan-backend"
-version = "0.1.0"
-description = "Fail-closed SEEDING planning backend derived from the V1.1 design RFC"
+version = "0.2.0"
+description = "Fail-closed SEEDING planning and Juguang execution backend"
 requires-python = ">=3.9"
 dependencies = [
   "fastapi>=0.115,<0.117",
+  "httpx>=0.28,<0.29",
   "pydantic>=2.11,<2.12",
   "uvicorn>=0.34,<0.36",
 ]
@@ -24,3 +25,6 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.hatch.build]
+include = ["app/**/*.py", "app/seeding/static/**"]

@@ -1,4 +1,4 @@
-# Resolved on Python 3.9.6 / macOS arm64 for the SEEDING Phase 0 test baseline.
+# Resolved on Python 3.9.6 / macOS arm64 for the SEEDING v0.2.0 test baseline.
 annotated-types==0.7.0
 anyio==4.12.1
 certifi==2026.7.22

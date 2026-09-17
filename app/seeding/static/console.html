@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SEEDING Control Console</title>
+  <style>
+    :root { color-scheme: light; --ink:#172018; --muted:#667068; --line:#dce4dc; --leaf:#176b45; --paper:#f6f8f4; --warn:#9c4b16; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:14px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif; color:var(--ink); background:var(--paper); }
+    header { padding:28px clamp(20px,5vw,64px); background:#fff; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 4px; font-size:clamp(24px,4vw,42px); letter-spacing:-.04em; }
+    header p { margin:0; color:var(--muted); }
+    main { display:grid; grid-template-columns:minmax(280px,380px) 1fr; gap:20px; padding:24px clamp(20px,5vw,64px) 56px; }
+    section { background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 8px 28px rgba(20,45,30,.05); }
+    h2 { margin:0 0 14px; font-size:14px; text-transform:uppercase; letter-spacing:.08em; }
+    label { display:block; margin:12px 0 4px; color:var(--muted); font-size:12px; }
+    input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--ink); }
+    textarea { min-height:140px; resize:vertical; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; }
+    button { border:0; border-radius:9px; padding:10px 12px; color:#fff; background:var(--leaf); cursor:pointer; font-weight:650; }
+    button.secondary { color:var(--ink); background:#eef3ee; }
+    .notice { margin-top:14px; padding:10px; border-left:3px solid var(--warn); color:var(--muted); background:#fff8f1; }
+    pre { margin:0; min-height:520px; max-height:75vh; overflow:auto; white-space:pre-wrap; word-break:break-word; font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    #status { margin:0 0 10px; color:var(--muted); }
+    @media (max-width:800px) { main { grid-template-columns:1fr; } pre { min-height:360px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SEEDING Control Console</h1>
+    <p>规划、数据源、作业、安全状态与受授权 API 操作入口</p>
+  </header>
+  <main>
+    <section>
+      <h2>Session</h2>
+      <label for="operator">Operator ID</label><input id="operator" autocomplete="username">
+      <label for="token">Operator Token</label><input id="token" type="password" autocomplete="current-password">
+      <label for="session">Session ID</label><input id="session" value="console-session">
+      <label for="project">Project ID</label><input id="project" placeholder="seed_…">
+      <div class="actions">
+        <button data-path="/health" data-public="1">Health</button>
+        <button data-path="/ready" data-public="1" class="secondary">Readiness</button>
+        <button data-project="preview">Preview</button>
+        <button data-project="sources" class="secondary">Sources</button>
+        <button data-project="jobs">Jobs</button>
+        <button data-project="audit" class="secondary">Audit</button>
+      </div>
+      <h2 style="margin-top:24px">API Request</h2>
+      <label for="method">Method</label>
+      <select id="method"><option>GET</option><option>POST</option><option>PUT</option></select>
+      <label for="path">Path</label><input id="path" value="/api/seeding/v1/" spellcheck="false">
+      <label for="body">JSON Body</label><textarea id="body" spellcheck="false">{}</textarea>
+      <button id="send" style="width:100%;margin-top:10px">Send authenticated request</button>
+      <div class="notice">凭据只保存在当前页面内存中，不写入 localStorage、cookie 或 URL。</div>
+    </section>
+    <section>
+      <h2>Response</h2>
+      <p id="status">等待请求</p>
+      <pre id="output">选择一个查询。</pre>
+    </section>
+  </main>
+  <script>
+    const byId = id => document.getElementById(id);
+    async function request(path, isPublic, method = 'GET', body = null) {
+      const status = byId('status'); const output = byId('output');
+      status.textContent = `${method} ${path}`; output.textContent = 'Loading…';
+      const headers = isPublic ? {} : {
+        'X-CID-Operator-Id': byId('operator').value,
+        'X-CID-Operator-Token': byId('token').value,
+        'X-CID-Session-Id': byId('session').value
+      };
+      if (body !== null) headers['Content-Type'] = 'application/json';
+      try {
+        const response = await fetch(path, {
+          method, headers, cache:'no-store',
+          body: body === null ? undefined : JSON.stringify(body)
+        });
+        const responseBody = await response.json();
+        status.textContent = `${response.status} ${response.statusText}`;
+        output.textContent = JSON.stringify(responseBody, null, 2);
+      } catch (error) {
+        status.textContent = 'Request failed'; output.textContent = String(error);
+      }
+    }
+    document.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+      if (button.dataset.path) return request(button.dataset.path, button.dataset.public === '1');
+      const project = byId('project').value.trim();
+      if (!project) { byId('status').textContent = 'Project ID required'; return; }
+      request(`/api/seeding/v1/projects/${encodeURIComponent(project)}/${button.dataset.project}`, false);
+    }));
+    byId('send').addEventListener('click', () => {
+      const method = byId('method').value;
+      const path = byId('path').value.trim();
+      if (!path.startsWith('/api/seeding/v1/') || path.includes('//')) {
+        byId('status').textContent = 'Path must start with /api/seeding/v1/'; return;
+      }
+      let body = null;
+      if (method !== 'GET') {
+        try { body = JSON.parse(byId('body').value || '{}'); }
+        catch (_) { byId('status').textContent = 'JSON body is invalid'; return; }
+        if (!window.confirm(`${method} ${path}\nConfirm this authenticated operation?`)) return;
+      }
+      request(path, false, method, body);
+    });
+  </script>
+</body>
+</html>

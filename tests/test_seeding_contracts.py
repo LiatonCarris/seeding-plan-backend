@@ -19,7 +19,9 @@ def test_project_contract_contains_explicit_account_category_and_campaign_identi
     None
 ):
     config = project_config()
-    assert config.advertiser.advertiser_id == "advertiser-1"
+    assert config.advertiser.advertiser_id == 12345
+    assert config.advertiser.environment == "TEST"
+    assert config.advertiser.account_evidence_sha256 == SHA
     assert config.advertiser.authorization_domain_id == "domain-1"
     assert config.category.selected_level == "L4"
     assert config.campaign_context.lifecycle_stage == "COLD_START"
@@ -35,6 +37,8 @@ def test_static_snapshot_enforces_t_a_n_order() -> None:
             source_proof_sha256=SHA,
             created_at=NOW,
             package_id="pkg",
+            package_name="package",
+            group_id="group",
             snapshot_at=NOW,
             population=100,
             aips=20,
@@ -99,6 +103,8 @@ def test_search_plan_has_business_limit_of_fifty_keywords() -> None:
             primary_lane="BRAND",
             keyword_ids=tuple(f"k-{index}" for index in range(51)),
             bid_mode="OCPX_STABLE_COST",
+            daily_budget_fen=10_000,
+            expected_daily_spend_fen=5_000,
             release_evidence={"eligible": True},
             identity=identity,
         )

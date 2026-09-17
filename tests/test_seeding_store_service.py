@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from seeding_fixtures import NOW, prepare_request, project_config
 
-from app.seeding.contracts import ConfirmRequest
+from app.seeding.contracts import ConfirmRequest, ExecuteRequest, ProjectMemberRequest
 from app.seeding.errors import ExecutionLocked, SeedingError
 from app.seeding.identity import sha256_json
 from app.seeding.service import SeedingService
@@ -65,6 +65,26 @@ def test_expired_running_lease_is_reclaimed(tmp_path) -> None:
     assert reclaimed["job_id"] == job["job_id"]
     assert reclaimed["lease_owner"] == "replacement-worker"
     assert reclaimed["attempt"] == 2
+
+
+def test_worker_heartbeat_extends_owned_running_lease(tmp_path) -> None:
+    store = SeedingStore(tmp_path / "seeding.sqlite3")
+    service = SeedingService(store)
+    config = project_config()
+    service.create_project(config, principal_id="owner-1")
+    job = service.enqueue_prepare(
+        config.project_id, prepare_request(config), principal_id="owner-1"
+    )
+    claimed = store.claim_job(worker_id="worker-with-heartbeat", lease_seconds=1)
+    assert claimed is not None
+    before = claimed["lease_expires_at"]
+    assert (
+        store.heartbeat_worker_jobs(worker_id="worker-with-heartbeat", lease_seconds=60)
+        == 1
+    )
+    after = store.get_job(job["job_id"])["lease_expires_at"]
+    assert after > before
+    assert store.heartbeat_worker_jobs(worker_id="other-worker") == 0
 
 
 def test_insufficient_budget_enters_waiting_budget_with_no_plans(tmp_path) -> None:
@@ -142,6 +162,78 @@ def test_non_owner_cannot_read_project(tmp_path) -> None:
     service.create_project(config, principal_id="owner-1")
     with pytest.raises(SeedingError) as exc:
         service.preview(config.project_id, principal_id="intruder")
+    assert exc.value.code == "RBAC_FORBIDDEN"
+
+
+def test_project_admin_can_grant_scoped_collaborator_access(tmp_path) -> None:
+    service = SeedingService(SeedingStore(tmp_path / "seeding.sqlite3"))
+    config = project_config()
+    service.create_project(config, principal_id="owner-1")
+    service.upsert_project_member(
+        config.project_id,
+        ProjectMemberRequest(principal_id="viewer-2", access_level="READ"),
+        principal_id="owner-1",
+    )
+    assert (
+        service.preview(config.project_id, principal_id="viewer-2")["project"][
+            "project_id"
+        ]
+        == config.project_id
+    )
+    with pytest.raises(SeedingError) as exc:
+        service.enqueue_prepare(
+            config.project_id,
+            prepare_request(config),
+            principal_id="viewer-2",
+        )
+    assert exc.value.code == "RBAC_FORBIDDEN"
+
+
+def test_project_write_access_cannot_approve_or_execute(tmp_path) -> None:
+    store = SeedingStore(tmp_path / "seeding.sqlite3")
+    service = SeedingService(store)
+    config = project_config()
+    service.create_project(config, principal_id="owner-1")
+    service.upsert_project_member(
+        config.project_id,
+        ProjectMemberRequest(principal_id="writer-2", access_level="WRITE"),
+        principal_id="owner-1",
+    )
+    service.enqueue_prepare(
+        config.project_id, prepare_request(config), principal_id="owner-1"
+    )
+    service.process_next_job(worker_id="test-worker")
+    matrix = store.latest_artifact(config.project_id, "plan_matrix")
+    object_hashes = tuple(
+        sorted(
+            sha256_json(item["payload"])
+            for item in store.list_active_plans(config.project_id)
+        )
+    )
+    with pytest.raises(SeedingError) as exc:
+        service.confirm(
+            config.project_id,
+            ConfirmRequest(
+                config_sha=sha256_json(config),
+                matrix_sha=matrix["content_sha"],
+                object_hashes=object_hashes,
+                confirmed_by="writer-2",
+                confirmed_at=NOW,
+            ),
+            principal_id="writer-2",
+        )
+    assert exc.value.code == "RBAC_FORBIDDEN"
+
+    with pytest.raises(SeedingError) as exc:
+        service.enqueue_test_execution(
+            config.project_id,
+            ExecuteRequest(
+                grant_id="execgrant-placeholder",
+                grant_sha256="0" * 64,
+                signature_sha256="0" * 64,
+            ),
+            principal_id="writer-2",
+        )
     assert exc.value.code == "RBAC_FORBIDDEN"
 
 

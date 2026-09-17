@@ -1,0 +1,42 @@
+services:
+  seeding:
+    build: .
+    ports:
+      - "127.0.0.1:8031:8031"
+    environment:
+      SEEDING_DATABASE_PATH: /srv/seeding/runtime/seeding.sqlite3
+      SEEDING_OPERATOR_AUTH_FILE: /run/secrets/operators
+      SEEDING_GRANT_SIGNING_KEY_FILE: /run/secrets/grant_signing_key
+      JUGUANG_ACCESS_TOKEN_FILE: /run/secrets/juguang_access_token
+      SEEDING_ALERT_WEBHOOK_FILE: /run/secrets/alert_webhook_url
+    volumes:
+      - seeding_runtime:/srv/seeding/runtime
+    secrets:
+      - operators
+      - grant_signing_key
+      - juguang_access_token
+      - alert_webhook_url
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8031/ready', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+secrets:
+  operators:
+    file: ./secrets/operators.json
+  grant_signing_key:
+    file: ./secrets/grant-signing.key
+  juguang_access_token:
+    file: ./secrets/juguang-access-token
+  alert_webhook_url:
+    file: ./secrets/alert-webhook-url
+
+volumes:
+  seeding_runtime:
