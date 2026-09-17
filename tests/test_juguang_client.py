@@ -5,6 +5,7 @@ import pytest
 
 from app.seeding.errors import SeedingError
 from app.seeding.juguang import (
+    AvailableTargetInfo,
     CrowdEstimateRequest,
     CrowdEstimateTargetConfig,
     JuguangClient,
@@ -72,6 +73,82 @@ def test_available_targets_filter_only_synced_successful_packages() -> None:
     with client_for(handler) as client:
         result = client.get_available_target_info(advertiser_id=123)
     assert [item.value for item in result.deliverable_crowd_packages()] == ["2048_1"]
+
+
+def test_available_targets_support_current_top_level_v1_shape() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "msg": "成功",
+                "success": True,
+                "data": {
+                    "industry_interest_target": {
+                        "content_interests": [],
+                        "shopping_interests": [],
+                    },
+                    "crowd_target": {
+                        "crowd_pkg": [
+                            {
+                                "value": "legacy-global",
+                                "name": "legacy-global",
+                                "sync_status": 1,
+                                "status": 2,
+                            }
+                        ]
+                    },
+                    "crowd_target_v1": {
+                        "customized_crowd_pkg": [
+                            {
+                                "value": "custom-ready",
+                                "name": "custom-ready",
+                                "group_id": "20880783",
+                                "sync_status": 1,
+                                "status": 2,
+                            },
+                            {
+                                "value": "custom-expired",
+                                "name": "custom-expired",
+                                "sync_status": 1,
+                                "status": 4,
+                            },
+                        ],
+                        "market_crowd_pkg": [
+                            {"value": "market", "name": "market", "children": []}
+                        ],
+                    },
+                },
+            },
+        )
+
+    with client_for(handler) as client:
+        result = client.get_available_target_info(advertiser_id=123)
+
+    assert [item.value for item in result.deliverable_crowd_packages()] == [
+        "custom-ready"
+    ]
+
+
+def test_available_targets_do_not_fall_back_when_v1_customized_list_is_empty() -> None:
+    parsed = AvailableTargetInfo.model_validate(
+        {
+            "industry_interest_target": {},
+            "crowd_target": {
+                "crowd_pkg": [
+                    {
+                        "value": "legacy-global",
+                        "name": "legacy-global",
+                        "sync_status": 1,
+                        "status": 2,
+                    }
+                ]
+            },
+            "crowd_target_v1": {"customized_crowd_pkg": []},
+        }
+    )
+
+    assert parsed.deliverable_crowd_packages() == ()
 
 
 def test_crowd_estimate_contract_and_response() -> None:

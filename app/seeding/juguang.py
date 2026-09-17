@@ -65,6 +65,11 @@ class CrowdTarget(JuguangModel):
     dmp_permission: Optional[bool] = None
 
 
+class CrowdTargetV1(JuguangModel):
+    customized_crowd_pkg: Tuple[CrowdPackage, ...] = tuple()
+    market_crowd_pkg: Tuple[Dict[str, Any], ...] = tuple()
+
+
 class IndustryInterestTarget(JuguangModel):
     content_interests: Tuple[CodeNamePair, ...] = tuple()
     shopping_interests: Tuple[CodeNamePair, ...] = tuple()
@@ -73,6 +78,8 @@ class IndustryInterestTarget(JuguangModel):
 
 class AvailableTargetInfo(JuguangModel):
     industry_interest_target: IndustryInterestTarget
+    crowd_target: Optional[CrowdTarget] = None
+    crowd_target_v1: Optional[CrowdTargetV1] = None
     gender_targets: Tuple[CodeNamePair, ...] = tuple()
     age_targets: Tuple[CodeNamePair, ...] = tuple()
     area_targets: Tuple[CodeNamePair, ...] = tuple()
@@ -80,10 +87,19 @@ class AvailableTargetInfo(JuguangModel):
     device_targets: Tuple[CodeNamePair, ...] = tuple()
 
     def deliverable_crowd_packages(self) -> Tuple[CrowdPackage, ...]:
-        target = self.industry_interest_target.crowd_target
-        if target is None:
-            return tuple()
-        return tuple(item for item in target.crowd_pkg if item.is_deliverable)
+        # Current MAPI responses expose advertiser-owned DMP packages under the
+        # top-level crowd_target_v1.customized_crowd_pkg field.  Older responses
+        # used either top-level crowd_target or the industry-interest nesting.
+        # Prefer the most specific current field so market/global packages are
+        # not mistaken for advertiser-owned custom audiences.
+        candidates: Tuple[CrowdPackage, ...] = tuple()
+        if self.crowd_target_v1 is not None:
+            candidates = self.crowd_target_v1.customized_crowd_pkg
+        elif self.crowd_target is not None:
+            candidates = self.crowd_target.crowd_pkg
+        elif self.industry_interest_target.crowd_target is not None:
+            candidates = self.industry_interest_target.crowd_target.crowd_pkg
+        return tuple(item for item in candidates if item.is_deliverable)
 
 
 class CrowdEstimateTargetConfig(JuguangModel):
